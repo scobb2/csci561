@@ -1,0 +1,58 @@
+Overview notes
+- 3D version of TSP. so there are (x, y, z) coordinates in 3D-space
+- Distance between cities = Euclidean distance between the 2 grid locations
+- the z coordinate represents the floor of the building located at (x, y)
+   ^ Can we assume this value won't ever be super large then??
+- Must use a Genetic Algorithm
+- Must go to all the locations exactly once, return to the starting point, and cover the minimum distance as a whole.
+- A path is a loop with the starting location as the final endpoint
+- There will be more complex cases, and it is your task to make sure that your program works correctly on any valid input. 
+   You are encouraged to design and try your own test cases to check how your program would behave in some complex
+   special cases that you might think of.
+- each homework is checked via an automated AI script, your output should match the specified format exactly.
+
+Grading notes
+60% - We will run your search agent on the set of hidden grading cases to get the corresponding
+      shortest paths. We will then use your path to calculate the path cost to grade your agent using
+      the following criteria:
+   ● Your score for a grading test case = (TA’s agent shortest path cost)/(your-path cost)
+   ● If your path cost < TA’s agent path cost, we will give you full marks, i.e., 1 point for that
+   grading test case.
+   ● We then sum up all scores obtained and weigh it by 60%
+
+40% - This section will test the quality of your agent against the agents developed by other students.
+      Students need to research and come up with ways to improve their Genetic Algorithm.
+      The path scores obtained in Part A (above) will be ranked against other students’ agents. A
+      rank-based score will be calculated for the student’s agent and contribute to 40% of the grade for this assignment.
+
+   Student’s score = 40*(1−(𝑟𝑎𝑛𝑘/𝑛𝑢𝑚𝑏𝑒𝑟 𝑜𝑓 𝑠𝑡𝑢𝑑𝑒𝑛𝑡𝑠))
+
+you will get 0 points on the ongoing test case if it takes too long/gets held up, regardless of the
+fact that anything is generated or not. We will make sure that the time limit for a given
+grading case (or class) is sufficient and long enough to solve the case with a correct
+algorithm implementation.
+*^^* (pure computation time used by your program and discards
+time taken by the operating system, disk I/O, program loading, etc. Beware that it
+accumulates time spent in any of the threads spawned by your agent (so if you run 4
+threads and use 400% CPU for 10 seconds, this will count as using 40 seconds of the
+allocated time).)
+
+
+Tips notes
+- You are free to choose your implementation methods based on your research.
+a- Initial Population.     Students need to implement this function, which creates paths randomly or with some heuristic chosen by you.
+b- Parent Selection.       Roulette wheel-based selection suggested (so everyone will be using)
+c- Crossover.              Combine solutions from the 2 parents into 1 child (this seems like it could raise performance issues)
+
+
+Input and Output
+input.txt - 
+      ● 1st line: A strictly positive 32-bit integer N, indicating the number of “city” locations in
+      the 3D space.
+      ● Next N lines: Each line is a city coordinate represented by three non-negative 32-bit
+      integers separated by one space character, for the grid location of the city.
+output.txt - 
+      ● 1st line: Computed distance of the path.
+      ● Next N+1 lines: Each line has three non-negative 32-bit integers separated by one space
+      character indicating the city visited in order.
+      ● Note: Your path ends at the start city. Hence, you will have N+1 lines.
