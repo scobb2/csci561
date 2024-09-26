@@ -2,7 +2,7 @@ import numpy as np
 
 # Parameters to tweak
 POPULATION_SIZE = 100      # Number of individuals in the population
-MAX_GENERATIONS = 3      # Number of generations to run the algorithm
+MAX_GENERATIONS = 500      # Number of generations to run the algorithm
 MUTATION_RATE = 0.1        # Probability of mutation for each individual
 TOURNAMENT_SIZE = 5        # Number of individuals participating in tournament selection
 

@@ -2,29 +2,31 @@ import numpy as np
 import time
 import os
 
-import argparse
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Genetic Algorithm Parameters")
-    parser.add_argument('--population_size', type=int, required=True, help='Population size')
-    parser.add_argument('--max_generations', type=int, required=True, help='Max generations')
-    parser.add_argument('--mutation_rate', type=float, required=True, help='Mutation rate')
-    parser.add_argument('--tournament_size', type=int, required=True, help='Tournament size')
-    parser.add_argument('--tournament_finalists', type=int, required=True, help='Tournament finalists')
-    parser.add_argument('--selection_rate', type=float, required=True, help='Selection rate')
-    parser.add_argument('--crossover_rate', type=float, required=True, help='Crossover rate')
+# import argparse
+# def parse_arguments():
+#     parser = argparse.ArgumentParser(description="Genetic Algorithm Parameters")
+#     parser.add_argument('--population_size', type=int, required=True, help='Population size')
+#     parser.add_argument('--max_generations', type=int, required=True, help='Max generations')
+#     parser.add_argument('--mutation_rate', type=float, required=True, help='Mutation rate')
+#     parser.add_argument('--tournament_size', type=int, required=True, help='Tournament size')
+#     parser.add_argument('--tournament_finalists', type=int, required=True, help='Tournament finalists')
+#     parser.add_argument('--selection_rate', type=float, required=True, help='Selection rate')
+#     parser.add_argument('--crossover_rate', type=float, required=True, help='Crossover rate')
+#     parser.add_argument('--input_file', type=str, required=True, help='Input file')
 
-    return parser.parse_args()
+#     return parser.parse_args()
 
-args = parse_arguments()
+# args = parse_arguments()
 
-# Use these variables in place of the hardcoded values
-POPULATION_SIZE = args.population_size
-MAX_GENERATIONS = args.max_generations
-MUTATION_RATE = args.mutation_rate
-TOURNAMENT_SIZE = args.tournament_size
-TOURNAMENT_FINALISTS = args.tournament_finalists
-SELECTION_RATE = args.selection_rate
-CROSSOVER_RATE = args.crossover_rate
+# # Use these variables in place of the hardcoded values
+# input_file_arg = args.input_file
+# POPULATION_SIZE = args.population_size
+# MAX_GENERATIONS = args.max_generations
+# MUTATION_RATE = args.mutation_rate
+# TOURNAMENT_SIZE = args.tournament_size
+# TOURNAMENT_FINALISTS = args.tournament_finalists
+# SELECTION_RATE = args.selection_rate
+# CROSSOVER_RATE = args.crossover_rate
 ######################################
 # check for BUG -- when input size is just 1 city!!! or 2 cities also crashes program. 3 seems okay tho...
 # should I put in a timer that outputs best so far at 280s to avoid timing cutoff?
@@ -32,15 +34,15 @@ CROSSOVER_RATE = args.crossover_rate
 # multiprocessing to parallelize distance evals?
 
 # Parameters to tweak
-# POPULATION_SIZE = 60
-# MAX_GENERATIONS = 1000
-# MUTATION_RATE = 0.101
-# TOURNAMENT_SIZE = 10
-# TOURNAMENT_FINALISTS = 6
+POPULATION_SIZE = 60
+MAX_GENERATIONS = 100
+MUTATION_RATE = 0.1
+TOURNAMENT_SIZE = 3
+TOURNAMENT_FINALISTS = 1
 REPLACE_RATE = 0.0 # sampling without replacement is usually preferred to maintain diversity.
-# SELECTION_RATE = 0.6
-# RANDOM_RATE = 0.2 # don't think we need -- crossover + mutation should be enough
-# CROSSOVER_RATE = 0.8
+SELECTION_RATE = 0.7
+RANDOM_RATE = 0.2 # don't think we need -- crossover + mutation should be enough
+CROSSOVER_RATE = 0.9
 
 # get data from input file
 def read_input(file_name):
@@ -111,8 +113,6 @@ def tournament_selection(selected_population, selected_distances):
     return new_population
  
 # Heuristic crossover -- inspo from citation 5
-########################### YOU SHOULD SELECT "ADJACENT PARENTS"
-########################### NEEDS UN-GPT REWORK
 def crossover(parent1, parent2, cities, N):
 
     # prioritize best parent in crossover
@@ -173,7 +173,6 @@ def crossover(parent1, parent2, cities, N):
 
     return child1, child2
 
-########################### NEEDS UN-GPT REWORK
 def repair_duplicates(child, s, e, N):
     # gather indexes of cities outside of crossover space
     # gather indexes within crossover space (protect these)
@@ -245,10 +244,13 @@ def genetic_algorithm(cities, N):
             best_distance = current_best_distance
             best_individual = current_best_individual.copy()
             gen_of_best_distance = generation
+      #       MUTATION_RATE = 0.05
+      #   else:
+      #      MUTATION_RATE = 0.1
         
         # print progress every 10 generations
-        if generation % 10 == 0:
-            print(f"Generation {generation}: Best distance so far: {best_distance}")
+      #   if generation % 10 == 0:
+      #       print(f"Generation {generation}: Best distance so far: {best_distance}")
         
 ########## selection
         num_selected = int(SELECTION_RATE * POPULATION_SIZE)
@@ -278,13 +280,11 @@ def genetic_algorithm(cities, N):
             else:
                child1, child2 = parent1, parent2
             if np.random.rand() < MUTATION_RATE:
-                chernobyl_child1 = reverse_mutation(child1, N)
-                chernobyl_child2 = reverse_mutation(child2, N)
-                crossover_offspring.append(chernobyl_child1)
-                crossover_offspring.append(chernobyl_child2)
-            else:
-                crossover_offspring.append(child1)
-                crossover_offspring.append(child2)
+                child1 = reverse_mutation(child1, N)
+            if np.random.rand() < MUTATION_RATE:
+                child2 = reverse_mutation(child2, N)
+            crossover_offspring.append(child1)
+            crossover_offspring.append(child2)
 
         # mutation
       #   mutated_offspring = []
@@ -328,7 +328,7 @@ def log_parameters(**kwargs):
     Parameters:
     - kwargs: Dictionary containing parameter names and their values.
     """
-    log_file = 'parameters_output.txt'
+    log_file = 'parameters_output_3.txt'
     file_exists = os.path.isfile(log_file)
 
     # Define the order of columns and their widths
@@ -343,7 +343,6 @@ def log_parameters(**kwargs):
         ('Crossover Rate', 15),
         ('Tournament Size', 15),
         ('Tournament Finalists', 15),
-        ('Replace Rate', 15)
     ]
 
     # Create the header and format strings
@@ -383,7 +382,6 @@ def log_parameters(**kwargs):
             'Crossover Rate': kwargs.get('crossover_rate', ''),
             'Tournament Size': kwargs.get('tournament_size', ''),
             'Tournament Finalists': kwargs.get('tournament_finalists', ''),
-            'Replace Rate': kwargs.get('replace_rate', '')
         }
 
         # Write the formatted row to the file
@@ -391,20 +389,20 @@ def log_parameters(**kwargs):
 
 # Main operator function
 def main():
-    print("Reading input...")
-    input_file = 'input4.txt'
+    #print("Reading input...")
+    input_file = 'input2.txt' # input_file_arg #
     cities, N = read_input(input_file)
-    print(f"Number of cities: {N}")
-    print("Running algorithm...")
+    #print(f"Number of cities: {N}")
+    #print("Running algorithm...")
     # Record the start time
     start_time = time.time()
     best_distance, best_path, gen_of_best_distance = genetic_algorithm(cities, N)
     # Record the end time and calculate the total time taken
     end_time = time.time()
     total_time = end_time - start_time
-    print("Writing output...")
+    #print("Writing output...")
     write_output(best_distance, best_path)
-    print("Program finished successfully.")
+    #print("Program finished successfully.")
     
     log_parameters(
         input_file=input_file,
@@ -417,7 +415,6 @@ def main():
         crossover_rate=CROSSOVER_RATE,
         tournament_size=TOURNAMENT_SIZE,
         tournament_finalists=TOURNAMENT_FINALISTS,
-        replace_rate=REPLACE_RATE        
     )
 
 # catch-all

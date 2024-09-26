@@ -3,13 +3,14 @@ import subprocess
 import time
 
 # Define your parameter values
-population_sizes = [60, 100, 140]  # Example values, adjust as needed
-max_generations = [1000, 2000, 3000]  # Example values
-mutation_rates = [0.09, 0.1, 0.11]  # Example values
-tournament_sizes = [10]  # Example values
-tournament_finalists = [4, 6, 8]  # Example values
-selection_rates = [0.5, 0.6, 0.7]  # Example values
-crossover_rates = [0.7, 0.8, 0.9]  # Example values
+population_sizes = [60, 100]  # Example values, adjust as needed
+max_generations = [500, 1000]  # Example values
+mutation_rates = [0.1]  # Example values
+tournament_sizes = [3, 5]  # Example values
+tournament_finalists = [1]  # Example values
+selection_rates = [0.6]  # Example values
+crossover_rates = [0.8, 0.9]  # Example values
+input_files = ['input1.txt', 'input2.txt', 'input3.txt', 'input4.txt']
 
 # Define how many times to run each permutation to account for randomness
 runs_per_permutation = 3
@@ -22,16 +23,17 @@ all_permutations = list(itertools.product(
     tournament_sizes,
     tournament_finalists,
     selection_rates,
-    crossover_rates
+    crossover_rates,
+    input_files
 ))
 
 print(f"Total permutations to run: {len(all_permutations) * runs_per_permutation}")
 
 # Path to your main program
-program_path = "homework3v3.py"  # Replace with your actual program's path
+program_path = "homework1v5.py"  # Replace with your actual program's path
 
 # Loop through each permutation
-for idx, (pop_size, max_gen, mut_rate, tour_size, tour_finalists, sel_rate, cross_rate) in enumerate(all_permutations):
+for idx, (pop_size, max_gen, mut_rate, tour_size, tour_finalists, sel_rate, cross_rate, input_file) in enumerate(all_permutations):
     for run in range(runs_per_permutation):
         print(f"Running permutation {idx + 1}/{len(all_permutations)}, run {run + 1}/{runs_per_permutation}")
 
@@ -45,12 +47,13 @@ for idx, (pop_size, max_gen, mut_rate, tour_size, tour_finalists, sel_rate, cros
                 "--tournament_size", str(tour_size),
                 "--tournament_finalists", str(tour_finalists),
                 "--selection_rate", str(sel_rate),
-                "--crossover_rate", str(cross_rate)
+                "--crossover_rate", str(cross_rate),
+                "--input_file", input_file
             ], check=True)
         except subprocess.CalledProcessError as e:
             print(f"Error during execution: {e}")
 
         # Wait for 60 seconds between each run
-        time.sleep(60)
+        time.sleep(15)
 
 print("All permutations completed.")

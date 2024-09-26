@@ -18,6 +18,7 @@ ENV/
 # Logs
 *.log
 parameters_output.txt
+output.txt
 
 # Test outputs
 .coverage
