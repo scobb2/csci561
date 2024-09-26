@@ -8,6 +8,7 @@ env/
 venv/
 ENV/
 .venv/
+for_venv.txt
 
 # VSCode settings
 .vscode/

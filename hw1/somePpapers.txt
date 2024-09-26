@@ -1,0 +1,20 @@
+In no particular order:
+
+https://dl.acm.org/doi/10.1145/3581792.3581798
+https://arxiv.org/pdf/2303.00614
+https://arxiv.org/pdf/1812.09351
+http://webhotel4.ruc.dk/~keld/research/LKH-3/
+
+https://core.ac.uk/download/pdf/144737457.pdf
+https://iopscience.iop.org/article/10.1088/1742-6596/2216/1/012035/pdf
+https://www.mdpi.com/2226-4310/9/2/86
+https://arxiv.org/pdf/1203.3099
+https://thesai.org/Downloads/Volume11No2/Paper_75-Adaptive_Sequential_Constructive_Crossover_Operator.pdf
+https://www.researchgate.net/publication/367680503_UAV_Path_Planning_using_Genetic_Algorithm_with_Parallel_Implementation
+
+https://link.springer.com/article/10.1023/A:1009624916728
+http://comopt.ifi.uni-heidelberg.de/software/TSPLIB95/
+https://www.math.uwaterloo.ca/tsp/data/art/index.html
+https://www.math.uwaterloo.ca/tsp/world/index.html
+https://www.math.uwaterloo.ca/tsp/concorde.html
+https://neos-server.org/neos/solvers/co:concorde/TSP.html
