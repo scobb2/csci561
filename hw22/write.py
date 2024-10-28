@@ -6,14 +6,15 @@
 # TodoList:
 
 def writeOutput(result, path="output.txt"):
-    res = ""
-    if result == "PASS":
-    	res = "PASS"
-    else:
-	    res += str(result[0]) + ',' + str(result[1])
+	res = ""
+	if result == "PASS":
+		res = "PASS"
+	else:
+		res += str(result[0]) + ',' + str(result[1])
 
-    with open(path, 'w') as f:
-        f.write(res)
+	with open(path, 'w') as f:
+	    f.write(res)
+
 
 def writePass(path="output.txt"):
 	with open(path, 'w') as f:
@@ -31,6 +32,6 @@ def writeNextInput(piece_type, previous_board, board, path="input.txt"):
 		res += "\n"
 
 	with open(path, 'w') as f:
-		f.write(res[:-1]);
+		f.write(res[:-1])
 
 		

@@ -15,11 +15,11 @@ class PolicyValueNet(nn.Module):
     def __init__(self, board_size):
         super(PolicyValueNet, self).__init__()
         self.board_size = board_size
-        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, padding=1)  # 4 input channels
+        self.conv1 = nn.Conv2d(4, 32, kernel_size=3, padding=1)  # Input channels: 4
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.fc1 = nn.Linear(128 * board_size * board_size, 256)
-        self.fc_p = nn.Linear(256, board_size * board_size)
+        self.fc_p = nn.Linear(256, board_size * board_size + 1)
         self.fc_v = nn.Linear(256, 1)
 
     def forward(self, x):
@@ -28,7 +28,7 @@ class PolicyValueNet(nn.Module):
         x = F.relu(self.conv3(x))
         x = x.view(-1, 128 * self.board_size * self.board_size)
         x = F.relu(self.fc1(x))
-        policy_logits = self.fc_p(x)
+        policy_logits = self.fc_p(x)  # Output size: board_size * board_size + 1
         value = torch.tanh(self.fc_v(x))
         return policy_logits, value
 
@@ -128,6 +128,8 @@ class AlphaZeroAgent:
                 if action != "PASS":
                     state.place_chess(action[0], action[1], piece_type)
                     state.died_pieces = state.remove_died_pieces(3 - piece_type)
+                else:
+                    state.previous_board = copy.deepcopy(state.board)
                 state.X_move = not state.X_move
                 piece_type = 1 if state.X_move else 2
 
@@ -150,6 +152,10 @@ class AlphaZeroAgent:
 
         # Get action probabilities
         actions_visits = [(action, child.N) for action, child in root_node.children.items()]
+        if not actions_visits:
+            # If no moves were made, pass
+            return "PASS", [("PASS", 1.0)]
+
         actions, visits = zip(*actions_visits)
         visits = np.array(visits, dtype=np.float32)
         probs = visits / np.sum(visits)
@@ -166,7 +172,13 @@ class AlphaZeroAgent:
             best_action = actions[action_idx]
             action_probs = probs
 
-        return best_action, [(a, p) for a, p in zip(actions, action_probs)]
+        # Map action_probs to full policy vector
+        full_policy = np.zeros(self.N * self.N + 1)
+        for action, prob in zip(actions, action_probs):
+            idx = self.action_to_idx(action)
+            full_policy[idx] = prob
+
+        return best_action, [(action, full_policy[self.action_to_idx(action)]) for action in actions]
 
     def evaluate(self, state, piece_type):
         # Convert the board to tensor
@@ -184,20 +196,17 @@ class AlphaZeroAgent:
                 if state.valid_place_check(i, j, piece_type, test_check=True):
                     valid_moves.append((i, j))
 
-        action_probs = []
-        idx = 0
-        for i in range(state.size):
-            for j in range(state.size):
-                if (i, j) in valid_moves:
-                    action_probs.append(((i, j), policy[idx]))
-                idx += 1
+        # Assume that "PASS" is always a valid move
+        valid_moves.append("PASS")
 
-        if not action_probs:
-            action_probs = [("PASS", 1.0)]
-        else:
-            # Normalize probabilities
-            total_prob = sum([prob for _, prob in action_probs])
-            action_probs = [(act, prob / total_prob) for act, prob in action_probs]
+        action_probs = []
+        for idx, action in enumerate(self.get_all_actions()):
+            if action in valid_moves:
+                action_probs.append((action, policy[idx]))
+
+        # Normalize probabilities
+        total_prob = sum([prob for _, prob in action_probs])
+        action_probs = [(act, prob / total_prob) for act, prob in action_probs]
 
         return action_probs, value
 
@@ -225,7 +234,7 @@ class AlphaZeroAgent:
             action, action_probs = self.mcts_search(go, piece_type, temp=1.0)
             # Store the data
             state_tensor = self.board_to_tensor(go, piece_type)
-            policy = np.zeros(self.N * self.N)
+            policy = np.zeros(self.N * self.N + 1)
             for act, prob in action_probs:
                 idx = self.action_to_idx(act)
                 policy[idx] = prob
@@ -269,8 +278,25 @@ class AlphaZeroAgent:
             i, j = action
             return i * self.N + j
 
+    def idx_to_action(self, idx):
+        if idx == self.N * self.N:
+            return "PASS"
+        else:
+            i = idx // self.N
+            j = idx % self.N
+            return (i, j)
+
+    def get_all_actions(self):
+        actions = []
+        for i in range(self.N):
+            for j in range(self.N):
+                actions.append((i, j))
+        actions.append("PASS")
+        return actions
+
     def train(self, epochs=1):
         self.model.train()
+        print(f"Model device: {next(self.model.parameters()).device}")
         for _ in range(epochs):
             if len(self.buffer) < self.batch_size:
                 continue
@@ -284,9 +310,11 @@ class AlphaZeroAgent:
             # Forward
             policy_logits, values = self.model(state_batch)
             values = values.view(-1)
-            policy_loss = F.cross_entropy(policy_logits, torch.argmax(mcts_probs_batch, dim=1))
+            # Compute losses
             value_loss = F.mse_loss(values, value_batch)
-            loss = policy_loss + value_loss
+            # For policy loss, use negative log likelihood
+            policy_loss = -torch.mean(torch.sum(mcts_probs_batch * F.log_softmax(policy_logits, dim=1), dim=1))
+            loss = value_loss + policy_loss
             # Backward
             loss.backward()
             self.optimizer.step()
@@ -298,9 +326,17 @@ class AlphaZeroAgent:
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
 if __name__ == "__main__":
+    # print(torch.__version__)
+    # if torch.cuda.is_available():
+    #     print(f"GPU: {torch.cuda.get_device_name(0)} is available.")
+    #     device = torch.device("cuda")
+    #     x = torch.rand(3, 3, device=device)
+    #     print(f"Tensor on GPU: {x}")
+    # else:
+    #     print("No GPU available. Training will run on CPU.")
     agent = AlphaZeroAgent()
-    num_iterations = 1000  # Number of training iterations
-    games_per_iteration = 10  # Number of self-play games per iteration
+    num_iterations = 1  # Reduce for testing purposes
+    games_per_iteration = 2  # Reduce for testing purposes
 
     for i in range(num_iterations):
         print(f"Iteration {i+1}/{num_iterations}")
@@ -308,6 +344,7 @@ if __name__ == "__main__":
             agent.play_self_play_game()
         agent.train(epochs=5)
         agent.save_model()
+
         
         
     # To play a game w model
