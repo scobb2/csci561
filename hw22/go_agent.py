@@ -8,7 +8,6 @@ import random
 from collections import deque
 import copy
 import logging
-import multiprocessing as mp
 
 class GO:
     def __init__(self, n):
@@ -362,7 +361,7 @@ class ReplayBuffer:
         return len(self.buffer)
 
 class AlphaZeroAgent:
-    def __init__(self, num_simulations=100, c_puct=1.0, buffer_size=50000, batch_size=128, lr=1e-4):
+    def __init__(self, num_simulations=100, c_puct=1.0, buffer_size=50000, batch_size=64, lr=0.001):
         self.type = 'alphazero'
         self.N = 5  # Board size
         self.model = PolicyValueNet(self.N)
@@ -521,7 +520,7 @@ class AlphaZeroAgent:
         )
         return board_tensor
 
-    def play_self_play_game(self, log_game=False, is_mp=False):
+    def play_self_play_game(self, log_game=False):
         go = GO(self.N)
         go.init_board(self.N)
         states, mcts_probs, current_players = [], [], []
@@ -576,13 +575,9 @@ class AlphaZeroAgent:
             else:
                 values.append(-1)
 
-
-        if is_mp:
-            return states, mcts_probs, values
-        else:
-            # Store the data in replay buffer
-            for state, mcts_prob, value in zip(states, mcts_probs, values):
-                self.buffer.add(state, mcts_prob, value)
+        # Store the data in replay buffer
+        for state, mcts_prob, value in zip(states, mcts_probs, values):
+            self.buffer.add(state, mcts_prob, value)
 
          # Log the game moves if log_game is True
         if log_game:
@@ -622,7 +617,7 @@ class AlphaZeroAgent:
         actions.append("PASS")
         return actions
 
-    def train(self, epochs=1):
+    def train(self, epochs=10):
         self.model.train()
         for epoch in range(epochs):
             if len(self.buffer) < self.batch_size:
@@ -648,10 +643,10 @@ class AlphaZeroAgent:
             self.optimizer.step()
             logging.info(f'Epoch {epoch}, Loss: {loss.item():.4f}, Policy Loss: {policy_loss.item():.4f}, Value Loss: {value_loss.item():.4f}')
 
-    def save_model(self, path="model.pth"):
+    def save_model(self, path="modelx.pth"):
         torch.save(self.model.state_dict(), path)
 
-    def load_model(self, path="model.pth"):
+    def load_model(self, path="modelx.pth"):
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
     def evaluate_against_previous(self, previous_agent, num_games=20):
@@ -727,21 +722,6 @@ class AlphaZeroAgent:
             piece_type = 3 - piece_type
             go.X_move = (piece_type == 1)
 
-    def collect_self_play_data(self, num_games):
-        num_processes = max(1, mp.cpu_count() - 2)  # Leave one core free
-        with mp.Pool(processes=num_processes) as pool:
-            results = pool.map(self.play_self_play_game, [None]*num_games)
-        for data in results:
-            states, mcts_probs, values = data
-            for s, p, v in zip(states, mcts_probs, values):
-                self.buffer.add(s, p, v)
-
-
-def play_self_play_game_for_mp(args):
-    agent, log_game = args
-    return agent.play_self_play_game(log_game=log_game, is_mp=True)
-
-
 if __name__ == "__main__":
     logging.basicConfig(filename='training.log', level=logging.INFO)
     agent = AlphaZeroAgent()
@@ -751,33 +731,46 @@ if __name__ == "__main__":
 
     # Uncomment the following for training
     num_iterations = 10  # Adjust as needed
-    games_per_iteration = 50  # Adjust as needed
+    games_per_iteration = 100  # Adjust as needed
 
     for i in range(num_iterations):
         print(f"Iteration {i+1}/{num_iterations}")
-        agent.collect_self_play_data(games_per_iteration)
-        # for j in range(games_per_iteration):
-        #     if j == 0:
-        #         agent.play_self_play_game(log_game=True)  # Log the first game
-        #     else:
-        #         agent.play_self_play_game()
-        #     print(f"  Completed game {j+1}/{games_per_iteration} in iteration {i+1}")
-        agent.train(epochs=5)
+        for j in range(games_per_iteration):
+            if j == 0:
+                agent.play_self_play_game(log_game=True)  # Log the first game
+            else:
+                agent.play_self_play_game()
+            print(f"  Completed game {j+1}/{games_per_iteration} in iteration {i+1}")
+        agent.train(epochs=10)
         # Save current model
-        agent.save_model(f"model_{i+1}.pth")
+        agent.save_model(f"modelx_{i+1}.pth")
         if i > 0:
             # Load previous model
-            previous_agent = AlphaZeroAgent(num_simulations=10, c_puct=1.0)
-            previous_agent.load_model(f"model_{i}.pth")
+            previous_agent = AlphaZeroAgent(num_simulations=100, c_puct=1.0)
+            previous_agent.load_model(f"modelx_{i}.pth")
             # Evaluate against previous model
             win_rate = agent.evaluate_against_previous(previous_agent, num_games=10)
             if win_rate < 0.55:
                 # Revert to previous model
-                agent.load_model(f"model_{i}.pth")
+                agent.load_model(f"modelx_{i}.pth")
                 logging.info(f"Model reverted to iteration {i} due to insufficient win rate.")
             else:
                 logging.info(f"Model from iteration {i+1} accepted.")
         else:
             logging.info(f"First model from iteration {i+1} accepted.")
     # Save final model
-    agent.save_model("final_model.pth")
+    agent.save_model("final_modelx.pth")
+
+
+# epochs 10
+# batch size 64
+# alpha (learning rate) 0.001
+# 10 iterations
+# 100 games per iteration
+
+# prev
+# epochs 5
+# batch size 256
+# alpha 0.0001
+# 10 iterations
+# 50 games per iteration
