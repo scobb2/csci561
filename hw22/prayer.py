@@ -21,7 +21,7 @@ class GO:
         self.died_pieces = []  # Initialize died pieces to be empty
         self.n_move = 0  # Trace the number of moves
         self.max_move = n * n - 1  # The max movement of a Go game
-        self.komi = 2.5  # Komi rule
+        self.komi = n / 2  # Komi rule
         self.verbose = False  # Verbose only when there is a manual player
         self.pass_count = 0  # Count consecutive passes
         self.previous_board = None
@@ -279,7 +279,7 @@ class PolicyValueNet(nn.Module):
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3, padding=1)
         self.fc1 = nn.Linear(128 * board_size * board_size, 256)
-        self.dropout = nn.Dropout(p=0.2)
+        self.dropout = nn.Dropout(p=0.3)
         self.fc_p = nn.Linear(256, board_size * board_size + 1)
         self.fc_v = nn.Linear(256, 1)
 
@@ -329,26 +329,22 @@ class MCTSNode:
             key=lambda act_node: act_node[1].get_value(c_puct)
         )
 
-    def update(self, action, leaf_value):
+    def update(self, leaf_value):
         self.N += 1
-         # Apply a penalty if the action is "PASS"
-        if action == "PASS":
-            self.W += (leaf_value * 0.5)  # Penalize "PASS" by scaling the value
-        else:
-            self.W += leaf_value
+        self.W += leaf_value
         self.Q = self.W / self.N
 
-    def update_recursive(self, action, leaf_value):
+    def update_recursive(self, leaf_value):
         if self.parent:
-            self.parent.update_recursive(action, -leaf_value)
-        self.update(leaf_value, action)
+            self.parent.update_recursive(-leaf_value)
+        self.update(leaf_value)
 
     def get_value(self, c_puct):
         u = c_puct * self.P * math.sqrt(self.parent.N) / (1 + self.N)
         return self.Q + u
 
 class ReplayBuffer:
-    def __init__(self, capacity=50000):
+    def __init__(self, capacity=10000):
         self.buffer = deque(maxlen=capacity)
 
     def add(self, state, mcts_prob, value):
@@ -364,31 +360,8 @@ class ReplayBuffer:
     def __len__(self):
         return len(self.buffer)
 
-class RandomPlayer:
-    def __init__(self):
-        self.type = 'random'
-
-    def get_input(self, go, piece_type):
-        '''
-        Get one input.
-
-        :param go: GO instance.
-        :param piece_type: 1('X') or 2('O').
-        :return: (row, column) coordinate of input.
-        '''
-        possible_placements = []
-        for i in range(go.size):
-            for j in range(go.size):
-                if go.valid_place_check(i, j, piece_type):
-                    possible_placements.append((i,j))
-
-        if not possible_placements:
-            return "PASS"
-        else:
-            return random.choice(possible_placements)
-
 class AlphaZeroAgent:
-    def __init__(self, num_simulations=50, c_puct=1.0, buffer_size=50000, batch_size=64, lr=1e-4):
+    def __init__(self, num_simulations=100, c_puct=1.0, buffer_size=50000, batch_size=256, lr=1e-4):
         self.type = 'alphazero'
         self.N = 5  # Board size
         self.model = PolicyValueNet(self.N)
@@ -396,19 +369,9 @@ class AlphaZeroAgent:
         self.c_puct = c_puct  # Exploration constant
         self.buffer = ReplayBuffer(capacity=buffer_size)
         self.batch_size = batch_size
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=1e-4)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
-        self.best_win_rate = 0.0  # For saving best models
-
-        actions = []
-        for i in range(5):
-            for j in range(5):
-                actions.append((i, j))
-        
-        actions.append("PASS")
-        
-        self.all_actions = actions
 
     def get_input(self, go, piece_type):
         # Use MCTS to get the best move
@@ -426,10 +389,8 @@ class AlphaZeroAgent:
             state = root_state.copy_board()
 
             # Selection
-            actions_selected = []
             while not node.is_leaf():
                 action, node = node.select(self.c_puct)
-                actions_selected.append(action)
                 if action != "PASS":
                     valid = state.place_chess(action[0], action[1], piece_type)
                     if not valid:
@@ -454,10 +415,7 @@ class AlphaZeroAgent:
                 node.expand(action_probs)
 
             # Backpropagation
-            for action in reversed(actions_selected):
-                node.update(action, leaf_value)
-                node = node.parent
-                leaf_value = -leaf_value
+            node.update_recursive(-leaf_value)
 
         # Get action probabilities
         actions_visits = [(action, child.N) for action, child in root_node.children.items()]
@@ -531,17 +489,13 @@ class AlphaZeroAgent:
                 if state.valid_place_check(i, j, piece_type):
                     valid_moves.append((i, j))
 
-        # Only append "PASS" if there are no valid moves
-        if not valid_moves:
-            valid_moves.append("PASS")
+        # Assume that "PASS" is always a valid move
+        valid_moves.append("PASS")
 
         action_probs = []
-        for idx, action in enumerate(self.all_actions):
+        for idx, action in enumerate(self.get_all_actions()):
             if action in valid_moves:
-                prob = policy[idx]
-                if action == "PASS":
-                    prob = 1  # Since PASS only allowed when no valid moves exist
-                action_probs.append((action, prob))
+                action_probs.append((action, policy[idx]))
 
         # Normalize probabilities
         total_prob = sum([prob for _, prob in action_probs])
@@ -566,78 +520,6 @@ class AlphaZeroAgent:
         )
         return board_tensor
 
-    def old_play_self_play_game(self, log_game=False):
-        go = GO(self.N)
-        go.init_board(self.N)
-        states, mcts_probs, current_players = [], [], []
-        piece_type = 1  # 'X' starts first
-        go.X_move = True
-        go.pass_count = 0
-        game_moves = []
-
-        while True:
-            # Adjust temperature
-            temp = max(1.0 - (go.n_move / 24), 1e-3)  # Dynamic temperature scaling
-            # Perform MCTS and get action probabilities
-            action, action_probs = self.mcts_search(go, piece_type, temp=temp)
-            # Store the data
-            state_tensor = self.board_to_tensor(go, piece_type)
-            policy = np.zeros(self.N * self.N + 1)
-            for act, prob in action_probs:
-                idx = self.action_to_idx(act)
-                policy[idx] = prob
-            states.append(state_tensor)
-            mcts_probs.append(policy)
-            current_players.append(piece_type)
-
-            if log_game:
-                logging.info(f"Action Probabilities: {policy}")
-            game_moves.append((copy.deepcopy(go.board), action))
-
-            # Execute the action
-            if action != "PASS":
-                valid = go.place_chess(action[0], action[1], piece_type)
-                if not valid:
-                    # Invalid move, pass instead
-                    go.pass_count += 1
-            else:
-                go.pass_count += 1
-            # Check for game end
-            if go.game_end(piece_type, "PASS" if action == "PASS" else "MOVE"):
-                winner = go.judge_winner()
-                break
-
-            go.n_move += 1
-            # Switch player
-            piece_type = 3 - piece_type
-            go.X_move = (piece_type == 1)
-
-        # Assign values to each state
-        values = []
-        for idx, player in enumerate(current_players):
-            if winner == 0:
-                values.append(0)
-            elif winner == player:
-                # Penalize for passing if it's not necessary
-                if game_moves[idx][1] == "PASS":
-                    values.append(-0.5)  # Assign a negative reward for passing
-                else:
-                    values.append(1)
-            else:
-                values.append(-1)
-
-        # Store the data in replay buffer
-        for state, mcts_prob, value in zip(states, mcts_probs, values):
-            self.buffer.add(state, mcts_prob, value)
-
-         # Log the game moves if log_game is True
-        if log_game:
-            logging.info("Game moves:")
-            for move_num, (board_state, action) in enumerate(game_moves):
-                board_str = self.board_to_string(board_state)
-                logging.info(f"Move {move_num + 1}, Player {'X' if current_players[move_num] == 1 else 'O'}, Action: {action}")
-                logging.info("\n" + board_str)
-
     def play_self_play_game(self, log_game=False):
         go = GO(self.N)
         go.init_board(self.N)
@@ -648,9 +530,8 @@ class AlphaZeroAgent:
         game_moves = []
 
         while True:
-            # Dynamic temperature scaling
-            max_moves = 24  # Maximum moves for a 5x5 board
-            temp = max(1.0 - (go.n_move / max_moves), 1e-3)
+            # Adjust temperature
+            temp = 1.0 if go.n_move < 10 else 1e-3
             # Perform MCTS and get action probabilities
             action, action_probs = self.mcts_search(go, piece_type, temp=temp)
             # Store the data
@@ -664,9 +545,7 @@ class AlphaZeroAgent:
             current_players.append(piece_type)
 
             if log_game:
-                logging.info(f"Action Probabilities: {policy}")
-            # Append to game_moves regardless of logging
-            game_moves.append((copy.deepcopy(go.board), action))
+                game_moves.append((copy.deepcopy(go.board), action))
 
             # Execute the action
             if action != "PASS":
@@ -676,21 +555,19 @@ class AlphaZeroAgent:
                     go.pass_count += 1
             else:
                 go.pass_count += 1
-
-            go.n_move += 1
-
             # Check for game end
             if go.game_end(piece_type, "PASS" if action == "PASS" else "MOVE"):
                 winner = go.judge_winner()
                 break
 
+            go.n_move += 1
             # Switch player
             piece_type = 3 - piece_type
             go.X_move = (piece_type == 1)
 
         # Assign values to each state
         values = []
-        for idx, player in enumerate(current_players):
+        for player in current_players:
             if winner == 0:
                 values.append(0)
             elif winner == player:
@@ -702,7 +579,7 @@ class AlphaZeroAgent:
         for state, mcts_prob, value in zip(states, mcts_probs, values):
             self.buffer.add(state, mcts_prob, value)
 
-        # Log the game moves if log_game is True
+         # Log the game moves if log_game is True
         if log_game:
             logging.info("Game moves:")
             for move_num, (board_state, action) in enumerate(game_moves):
@@ -732,37 +609,15 @@ class AlphaZeroAgent:
             j = idx % self.N
             return (i, j)
 
-    # def get_all_actions(self):
-    #     actions = []
-    #     for i in range(state.size):
-    #         for j in range(state.size):
-    #             actions.append((i, j))
-        
-    #     actions.append("PASS")
-        
-    #     return actions
+    def get_all_actions(self):
+        actions = []
+        for i in range(self.N):
+            for j in range(self.N):
+                actions.append((i, j))
+        actions.append("PASS")
+        return actions
 
-    def get_all_valid_actions(self, state, piece_type):
-        '''
-        Retrieves all valid actions for the current state and player.
-
-        :param state: Current GO game state.
-        :param piece_type: 1 ('X') or 2 ('O').
-        :return: List of valid actions, including "PASS" if applicable.
-        '''
-        valid_actions = []
-        for i in range(state.size):
-            for j in range(state.size):
-                if state.valid_place_check(i, j, piece_type):
-                    valid_actions.append((i, j))
-        
-        # "PASS" is always a valid move unless the game has ended
-        if not state.has_any_valid_moves(piece_type):
-            valid_actions.append("PASS")
-        
-        return valid_actions
-
-    def train(self, epochs=5):
+    def train(self, epochs=1):
         self.model.train()
         for epoch in range(epochs):
             if len(self.buffer) < self.batch_size:
@@ -788,10 +643,10 @@ class AlphaZeroAgent:
             self.optimizer.step()
             logging.info(f'Epoch {epoch}, Loss: {loss.item():.4f}, Policy Loss: {policy_loss.item():.4f}, Value Loss: {value_loss.item():.4f}')
 
-    def save_model(self, path="modelx.pth"):
+    def save_model(self, path="model.pth"):
         torch.save(self.model.state_dict(), path)
 
-    def load_model(self, path="modelx.pth"):
+    def load_model(self, path="model.pth"):
         self.model.load_state_dict(torch.load(path, map_location=self.device))
 
     def evaluate_against_previous(self, previous_agent, num_games=20):
@@ -806,21 +661,6 @@ class AlphaZeroAgent:
         logging.info(f"Win rate against previous model: {win_rate}")
         return win_rate
     
-    def evaluate_against_random_player(self, num_games=20):
-        random_player = RandomPlayer()
-        win_count = 0
-        for game_num in range(num_games):
-            winner = self.play_game_against_random(random_player, self_color=random.choice([1, 2]))
-            if winner == 1:  # Assuming 'X' is your agent
-                win_count += 1
-            elif winner == 2:
-                pass  # 'O' wins
-            else:
-                pass  # Tie
-        win_rate = win_count / num_games
-        logging.info(f"Win rate against Random Player: {win_rate}")
-        return win_rate
-
     def play_game_against(self, opponent_agent, self_color=1):
         go = GO(self.N)
         go.init_board(self.N)
@@ -839,49 +679,13 @@ class AlphaZeroAgent:
                     go.pass_count += 1
             else:
                 go.pass_count += 1
-                
-            go.n_move += 1
             if go.game_end(piece_type, "PASS" if action == "PASS" else "MOVE"):
                 winner = go.judge_winner()
                 return winner
-            # Switch player
-            piece_type = 3 - piece_type
-            go.X_move = (piece_type == 1)
-
-    def play_game_against_random(self, opponent, self_color=1):
-        go = GO(self.N)
-        go.init_board(self.N)
-        piece_type = 1  # Black starts first
-        go.X_move = True
-        go.pass_count = 0
-
-        while True:
-            if piece_type == self_color:
-                # Agent's turn: use MCTS to select action
-                action, _ = self.mcts_search(go, piece_type, temp=1e-3)
-            else:
-                # Opponent's turn: use opponent's get_input method
-                action = opponent.get_input(go, piece_type)
-            
-            if action != "PASS":
-                valid = go.place_chess(action[0], action[1], piece_type)
-                if not valid:
-                    # Invalid move, pass instead
-                    go.pass_count += 1
-            else:
-                go.pass_count += 1
-            
-            # Check for game end
-            if go.game_end(piece_type, "PASS" if action == "PASS" else "MOVE"):
-                winner = go.judge_winner()
-                return winner
-            
             go.n_move += 1
             # Switch player
             piece_type = 3 - piece_type
             go.X_move = (piece_type == 1)
-
-
 
     def test_agent(self):
         # Test function to visualize game plays
@@ -937,79 +741,22 @@ if __name__ == "__main__":
             else:
                 agent.play_self_play_game()
             print(f"  Completed game {j+1}/{games_per_iteration} in iteration {i+1}")
-
         agent.train(epochs=5)
         # Save current model
-        agent.save_model(f"modelx_{i+1}.pth")
-
-        # Evaluate against Random Player
-        #################################################################
-        win_rate = agent.evaluate_against_random_player(num_games=20)
-        logging.info(f"Win rate against Random Player after iteration {i+1}: {win_rate}")
-        # Save the best model
-        if win_rate > agent.best_win_rate -0.02:
-            agent.best_win_rate = win_rate
-            agent.save_model(f"best_modelx_{i+1}.pth")
-            logging.info(f"Best model updated at iteration {i+1} with win rate {win_rate:.2f}")
-        
-        # To evaluate against prior model:
-        #################################################################
-        # if i > 0:
-        #     # Load previous model
-        #     previous_agent = AlphaZeroAgent(num_simulations=50, c_puct=1.0)
-        #     previous_agent.load_model(f"modelx_{i}.pth")
-        #     # Evaluate against previous model
-        #     win_rate = agent.evaluate_against_previous(previous_agent, num_games=20)
-        #     if win_rate < 0.55:
-        #         # Revert to previous model
-        #         agent.load_model(f"modelx_{i}.pth")
-        #         logging.info(f"Model reverted to iteration {i} due to insufficient win rate.")
-        #     else:
-        #         logging.info(f"Model from iteration {i+1} accepted.")
-        # else:
-        #     logging.info(f"First model from iteration {i+1} accepted.")
-
-
-
-
+        agent.save_model(f"Pmodel_{i+1}.pth")
+        if i > 0:
+            # Load previous model
+            previous_agent = AlphaZeroAgent(num_simulations=100, c_puct=1.0)
+            previous_agent.load_model(f"Pmodel_{i}.pth")
+            # Evaluate against previous model
+            win_rate = agent.evaluate_against_previous(previous_agent, num_games=20)
+            if win_rate < 0.55:
+                # Revert to previous model
+                agent.load_model(f"Pmodel_{i}.pth")
+                logging.info(f"Model reverted to iteration {i} due to insufficient win rate.")
+            else:
+                logging.info(f"Model from iteration {i+1} accepted.")
+        else:
+            logging.info(f"First model from iteration {i+1} accepted.")
     # Save final model
-    agent.save_model("final_modelx.pth")
-
-
-# Passing issues
-# epochs 10
-# batch size 64
-# alpha (learning rate) 0.001
-# 10 iterations
-# 100 games per iteration
-
-# dropout 0.2 or 0.4??
-# c_puct 1.2??
-
-# Passing issues
-# prev
-# epochs 5
-# batch size 256
-# alpha (learning rate) 0.0001
-# 10 iterations
-# 50 games per iteration
-
-
-
-
-# Incorporate batch normalization layers after convolutional layers to stabilize and accelerate training.
-# python
-# Copy code
-# self.bn1 = nn.BatchNorm2d(32)
-# self.bn2 = nn.BatchNorm2d(64)
-# self.bn3 = nn.BatchNorm2d(128)
-
-
-
-# Implement Annealing Schedule:
-# Example: Decrease temperature linearly or exponentially over moves.
-# Implementation Example:
-# python
-# Copy code
-# max_moves = 24  # Maximum moves for a 5x5 board
-# temp = max(1.0 - (go.n_move / max_moves), 1e-3)
+    agent.save_model("final_Pmodel.pth")
