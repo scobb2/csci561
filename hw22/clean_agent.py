@@ -146,27 +146,155 @@ class GO:
             return 2
 
 class PolicyValueNet(nn.Module):
-    def __init__(self, board_size):
+    def __init__(self, board_size, action_size, num_channels=128, num_res_blocks=5):
         super(PolicyValueNet, self).__init__()
         self.board_size = board_size
-        self.conv1 = nn.Conv2d(4, 16, kernel_size=3, padding=1)
-        self.bn1 = nn.BatchNorm2d(16)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.bn2 = nn.BatchNorm2d(32)
-        self.fc1 = nn.Linear(32 * board_size * board_size, 128)
-        self.dropout = nn.Dropout(p=0.3)
-        self.fc_p = nn.Linear(128, board_size * board_size + 1)
-        self.fc_v = nn.Linear(128, 1)
+        self.action_size = action_size
+        self.num_channels = num_channels
+
+        # Initial convolutional layer
+        self.conv1 = nn.Conv2d(16, num_channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(num_channels)
+
+        # Residual blocks
+        self.res_blocks = nn.ModuleList(
+            [ResidualBlock(num_channels) for _ in range(num_res_blocks)]
+        )
+
+        # Policy head
+        self.policy_conv = nn.Conv2d(num_channels, 2, kernel_size=1)
+        self.policy_bn = nn.BatchNorm2d(2)
+        self.policy_fc = nn.Linear(2 * board_size * board_size, action_size)
+
+        # Value head
+        self.value_conv = nn.Conv2d(num_channels, 1, kernel_size=1)
+        self.value_bn = nn.BatchNorm2d(1)
+        self.value_fc1 = nn.Linear(board_size * board_size, 64)
+        self.value_fc2 = nn.Linear(64, 1)
 
     def forward(self, x):
+        # x shape: (batch_size, 4, board_size, board_size)
         x = F.relu(self.bn1(self.conv1(x)))
-        x = F.relu(self.bn2(self.conv2(x)))
-        x = x.view(-1, 32 * self.board_size * self.board_size)
-        x = F.relu(self.fc1(x))
-        x = self.dropout(x)
-        policy_logits = self.fc_p(x)
-        value = torch.tanh(self.fc_v(x))
+
+        # Pass through residual blocks
+        for res_block in self.res_blocks:
+            x = res_block(x)
+
+        # Policy head
+        policy = F.relu(self.policy_bn(self.policy_conv(x)))
+        policy = policy.view(-1, 2 * self.board_size * self.board_size)
+        policy_logits = self.policy_fc(policy)
+
+        # Value head
+        value = F.relu(self.value_bn(self.value_conv(x)))
+        value = value.view(-1, self.board_size * self.board_size)
+        value = F.relu(self.value_fc1(value))
+        value = torch.tanh(self.value_fc2(value))
+
         return policy_logits, value
+    # def __init__(self, board_size):
+    #     super(PolicyValueNet, self).__init__()
+    #     self.board_size = board_size
+    #     self.conv1 = nn.Conv2d(4, 16, kernel_size=3, padding=1)
+    #     self.bn1 = nn.BatchNorm2d(16)
+    #     self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+    #     self.bn2 = nn.BatchNorm2d(32)
+    #     self.fc1 = nn.Linear(32 * board_size * board_size, 128)
+    #     self.dropout = nn.Dropout(p=0.3)
+    #     self.fc_p = nn.Linear(128, board_size * board_size + 1)
+    #     self.fc_v = nn.Linear(128, 1)
+
+    # def forward(self, x):
+    #     x = F.relu(self.bn1(self.conv1(x)))
+    #     x = F.relu(self.bn2(self.conv2(x)))
+    #     x = x.view(-1, 32 * self.board_size * self.board_size)
+    #     x = F.relu(self.fc1(x))
+    #     x = self.dropout(x)
+    #     policy_logits = self.fc_p(x)
+    #     value = torch.tanh(self.fc_v(x))
+    #     return policy_logits, value
+
+    # def __init__(self, board_size, action_size, num_channels=512, dropout=0.3):
+    #     super(PolicyValueNet, self).__init__()
+    #     self.board_size = board_size
+    #     self.action_size = action_size
+    #     self.num_channels = num_channels
+    #     self.dropout = dropout
+
+    #     # Convolutional layers
+    #     self.conv1 = nn.Conv2d(4, num_channels, kernel_size=3, padding=1)
+    #     self.bn1 = nn.BatchNorm2d(num_channels)
+    #     self.conv2 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+    #     self.bn2 = nn.BatchNorm2d(num_channels)
+    #     self.conv3 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+    #     self.bn3 = nn.BatchNorm2d(num_channels)
+    #     self.conv4 = nn.Conv2d(num_channels, num_channels, kernel_size=3, padding=1)
+    #     self.bn4 = nn.BatchNorm2d(num_channels)
+
+    #     # Compute the size of the flattened features after convolution layers
+    #     def conv2d_size_out(size, kernel_size=3, padding=0, stride=1):
+    #         return (size + 2 * padding - (kernel_size - 1) - 1) // stride + 1
+
+    #     # conv_w = conv2d_size_out(
+    #     #     conv2d_size_out(
+    #     #         conv2d_size_out(
+    #     #             conv2d_size_out(self.board_size, 3, padding=1),  # After conv1
+    #     #             3, padding=1),  # After conv2
+    #     #         3, padding=0),  # After conv3
+    #     #     3, padding=0)  # After conv4
+
+    #     # conv_h = conv_w  # Assuming square board
+
+    #     # Calculating the output size after each convolution layer
+    #     conv1_size = conv2d_size_out(self.board_size, kernel_size=3, padding=1)
+    #     conv2_size = conv2d_size_out(conv1_size, kernel_size=3, padding=1)
+    #     conv3_size = conv2d_size_out(conv2_size, kernel_size=3, padding=1)
+    #     conv4_size = conv2d_size_out(conv3_size, kernel_size=3, padding=1)
+
+    #     # self.flattened_size = num_channels * conv_w * conv_h
+    #     self.flattened_size = self.num_channels * conv4_size * conv4_size
+
+    #     # Fully connected layers
+    #     self.fc1 = nn.Linear(self.flattened_size, 1024)
+    #     self.bn_fc1 = nn.BatchNorm1d(1024)
+    #     self.fc2 = nn.Linear(1024, 512)
+    #     self.bn_fc2 = nn.BatchNorm1d(512)
+
+    #     # Output layers
+    #     self.fc_pi = nn.Linear(512, self.action_size)
+    #     self.fc_v = nn.Linear(512, 1)
+
+    # def forward(self, x):
+    #     # x: (batch_size, 4, board_size, board_size)
+    #     x = F.relu(self.bn1(self.conv1(x)))  # Conv layer 1
+    #     x = F.relu(self.bn2(self.conv2(x)))  # Conv layer 2
+    #     x = F.relu(self.bn3(self.conv3(x)))  # Conv layer 3
+    #     x = F.relu(self.bn4(self.conv4(x)))  # Conv layer 4
+    #     x = x.view(-1, self.flattened_size)  # Flatten
+
+    #     x = F.dropout(F.relu(self.bn_fc1(self.fc1(x))), p=self.dropout, training=self.training)
+    #     x = F.dropout(F.relu(self.bn_fc2(self.fc2(x))), p=self.dropout, training=self.training)
+
+    #     policy_logits = self.fc_pi(x)  # Policy head (logits)
+    #     value = torch.tanh(self.fc_v(x))  # Value head
+
+    #     return policy_logits, value
+
+class ResidualBlock(nn.Module):
+    def __init__(self, channels):
+        super(ResidualBlock, self).__init__()
+        self.conv1 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.bn1 = nn.BatchNorm2d(channels)
+        self.conv2 = nn.Conv2d(channels, channels, kernel_size=3, padding=1)
+        self.bn2 = nn.BatchNorm2d(channels)
+    
+    def forward(self, x):
+        residual = x
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += residual
+        out = F.relu(out)
+        return out
 
 class MCTSNode:
     def __init__(self, state, parent=None, prior_p=1.0):
@@ -193,6 +321,7 @@ class MCTSNode:
                     next_state.pass_count += 1
                 next_state.X_move = not next_state.X_move
                 self.children[action] = MCTSNode(next_state, self, prob)
+        # logging.info(f'Node expanded with {len(self.children)} children.')
 
     def select(self, c_puct):
         return max(self.children.items(), key=lambda act_node: act_node[1].get_value(c_puct))
@@ -245,29 +374,47 @@ class RandomPlayer:
             return random.choice(possible_placements)
 
 class AlphaZeroAgent:
-    def __init__(self, num_simulations=25, c_puct=1.0, buffer_size=200000, batch_size=64, lr=0.001):
+    def __init__(self, num_simulations=100, c_puct=1.0, buffer_size=200000, batch_size=512, lr=0.001,
+                 num_channels=516, dropout=0.3):
         self.type = 'alphazero'
         self.N = 5
-        self.model = PolicyValueNet(self.N)
+        self.action_size = self.N * self.N + 1  # Number of positions plus "PASS"
+        self.num_channels = num_channels
+        self.dropout = dropout
+        self.model = PolicyValueNet(self.N, self.action_size, num_channels=self.num_channels) # , dropout=self.dropout
         self.num_simulations = num_simulations
         self.c_puct = c_puct
         self.buffer = ReplayBuffer(capacity=buffer_size)
         self.batch_size = batch_size
-        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=lr, weight_decay=1e-4)
+        self.optimizer = torch.optim.SGD(self.model.parameters(), lr=lr, momentum=0.9, weight_decay=1e-4)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model.to(self.device)
         self.best_win_rate = 0.0
-        self.all_actions = [(i, j) for i in range(5) for j in range(5)] + ["PASS"]
+        self.all_actions = [(i, j) for i in range(self.N) for j in range(self.N)] + ["PASS"]
 
     def get_input(self, go, piece_type):
         action, _ = self.mcts_search(go, piece_type, temp=1e-3)
         return action
 
-    def mcts_search(self, go, piece_type, temp=1.0):
+    def mcts_search(self, go, piece_type, temp=1.0, add_noise=False):
         initial_piece_type = piece_type
         root_state = go.copy_board()
         root_state.X_move = (piece_type == 1)
         root_node = MCTSNode(root_state)
+
+        # Evaluate the root node to get initial priors
+        action_probs, _ = self.evaluate(root_state, piece_type)
+        root_node.expand(action_probs)
+
+        # Add Dirichlet noise to the root node's priors if needed
+        if add_noise:
+            dir_alpha = 0.3  # Adjust alpha as needed
+            epsilon = 0.25   # Adjust epsilon as needed
+            valid_actions = [action for action, prob in action_probs]
+            noise = np.random.dirichlet([dir_alpha] * len(valid_actions))
+            for idx, (action, _) in enumerate(action_probs):
+                root_node.children[action].P = \
+                    (1 - epsilon) * root_node.children[action].P + epsilon * noise[idx]
 
         for _ in range(self.num_simulations):
             node = root_node
@@ -300,7 +447,12 @@ class AlphaZeroAgent:
                 leaf_value = -leaf_value
 
         actions_visits = [(action, child.N) for action, child in root_node.children.items()]
+        # debug
+        logging.debug(f"Actions and visit counts: {actions_visits}")
+
         if not actions_visits:
+            # debug
+            logging.debug("No actions were visited during MCTS simulations.")
             return "PASS", [(action, 1.0)]
 
         actions, visits = zip(*actions_visits)
@@ -333,15 +485,26 @@ class AlphaZeroAgent:
             idx = self.action_to_idx(action)
             full_policy[idx] = prob
 
+        # Log the probabilities after temperature adjustment
+        logging.debug(f"Action probabilities after temperature adjustment: {list(zip(actions, probs))}")
+
+        # Log the selected action
+        logging.debug(f"Selected action: {best_action}, Probability: {probs[action_idx]}")
+
         return best_action, [(action, full_policy[self.action_to_idx(action)]) for action in actions]
 
     def evaluate(self, state, piece_type):
         board_tensor = self.board_to_tensor(state, piece_type)
         board_tensor = board_tensor.unsqueeze(0).to(self.device)  # Add batch dimension
+        self.model.eval()
         with torch.no_grad():
             policy_logits, value = self.model(board_tensor)
             policy = F.softmax(policy_logits, dim=1).cpu().numpy()[0]
             value = value.item()
+        self.model.train()
+
+        # debug
+        logging.debug(f"Raw policy probabilities: {policy}")
         
         if np.all(state.board == 0) and piece_type == 1:
             center = (2,2)
@@ -350,6 +513,8 @@ class AlphaZeroAgent:
             policy[center_idx] += boost_factor
             # Re-normalize the probabilities
             policy /= np.sum(policy)
+            # debug
+            logging.debug(f"Policy probabilities after center boost: {policy}")
 
         valid_moves = []
         for i in range(state.size):
@@ -368,23 +533,35 @@ class AlphaZeroAgent:
                 action_probs.append((action, prob))
         
         total_prob = sum(prob for _, prob in action_probs)
+        # debug
+        logging.debug(f"Total probability before normalization: {total_prob}")
         
         if total_prob > 0:
             action_probs = [(act, prob / total_prob) for act, prob in action_probs]
         else:
             action_probs = [(act, 1.0 / len(action_probs)) for act, _ in action_probs]
 
+
+        # debug
+        logging.debug(f"Normalized action probabilities: {action_probs}")
         return action_probs, value
 
     def board_to_tensor(self, state, piece_type):
-        board_array = np.array(state.board)
-        current_player = (board_array == piece_type).astype(np.float32)
-        opponent_player = (board_array == 3 - piece_type).astype(np.float32)
-        ones = np.ones((self.N, self.N), dtype=np.float32)
-        zeros = np.zeros((self.N, self.N), dtype=np.float32)
-        board_tensor = torch.FloatTensor(
-            np.array([current_player, opponent_player, ones, zeros])
-        )
+        history = []
+        current_state = state
+        for _ in range(8):  # Include last 8 states
+            current_player = (current_state.board == piece_type).astype(np.float32)
+            opponent_player = (current_state.board == 3 - piece_type).astype(np.float32)
+            history.extend([current_player, opponent_player])
+            if current_state.previous_board is not None:
+                current_state = GO(self.N)
+                current_state.board = current_state.previous_board
+            else:
+                break
+        # Pad history if less than required
+        while len(history) < 16:
+            history.append(np.zeros((self.N, self.N), dtype=np.float32))
+        board_tensor = torch.FloatTensor(np.array(history))
         return board_tensor
 
     def play_self_play_game(self, log_game=False):
@@ -417,8 +594,8 @@ class AlphaZeroAgent:
             
             else:
                 temp = max(1.0 - (go.n_move / 24), 1e-3)  # Dynamic temperature scaling
-                logging.info(f"Move {go.n_move}, Temperature: {temp}")
-                action, action_probs = self.mcts_search(go, piece_type, temp=temp)
+                # logging.info(f"Move {go.n_move}, Temperature: {temp}")
+                action, action_probs = self.mcts_search(go, piece_type, temp=temp, add_noise=True)
                 state_tensor = self.board_to_tensor(go, piece_type)
         ############################################################### why 26 below?            
                 policy = np.zeros(self.N * self.N + 1)
@@ -442,8 +619,14 @@ class AlphaZeroAgent:
         ###############################################################
                 go.n_move += 1
 
+                # debug
+                # if log_game:
+                #     logging.info(f"Player {'X' if piece_type == 1 else 'O'} took action: {action}")
+
                 if go.game_end(piece_type):
                     winner = go.judge_winner()
+                    # debug
+                    logging.info(f"Game ended. Winner: {'X' if winner == 1 else 'O'}")
                     break
 
                 # go.n_move += 1
@@ -453,12 +636,14 @@ class AlphaZeroAgent:
         for state, mcts_prob, value in zip(states, mcts_probs, values):
             self.buffer.add(state, mcts_prob, value)
 
+
         if log_game:
             logging.info("Game moves:")
             for move_num, (board_state, action) in enumerate(game_moves):
                 board_str = self.board_to_string(board_state)
                 logging.info(f"Move {move_num + 1}, Player {'X' if current_players[move_num] == 1 else 'O'}, Action: {action}")
                 logging.info("\n" + board_str)
+                logging.info(f"Replay buffer size: {len(self.buffer)}")
 
     def board_to_string(self, board):
         board_str = ''
@@ -486,6 +671,8 @@ class AlphaZeroAgent:
         self.model.train()
         for epoch in range(epochs):
             if len(self.buffer) < self.batch_size:
+                # debug
+                logging.info("Not enough samples in the buffer to start training.")
                 continue
             state_batch, mcts_probs_batch, value_batch = self.buffer.sample(self.batch_size)
             state_batch = torch.stack(state_batch).to(self.device)
@@ -506,6 +693,16 @@ class AlphaZeroAgent:
             loss.backward()
             self.optimizer.step()
             logging.info(f'Epoch {epoch}, Loss: {loss.item():.4f}, Policy Loss: {policy_loss.item():.4f}, Value Loss: {value_loss.item():.4f}')
+
+            # debug
+            total_norm = 0
+            for p in self.model.parameters():
+                param_norm = p.grad.data.norm(2)
+                total_norm += param_norm.item() ** 2
+            total_norm = total_norm ** 0.5
+            logging.info(f'Gradient Norm: {total_norm}')
+        # debug
+        logging.info("Training completed for this iteration.")
 
     def save_model(self, path="modelx.pth"):
         torch.save(self.model.state_dict(), path)
@@ -553,7 +750,7 @@ class AlphaZeroAgent:
         while True:
             if piece_type == self_color:
                 # Agent's turn: use MCTS to select action
-                action, _ = self.mcts_search(go, piece_type, temp=1e-3)
+                action, _ = self.mcts_search(go, piece_type, temp=1e-3, add_noise=False)
             else:
                 # Opponent's turn: use opponent's get_input method
                 action = opponent.get_input(go, piece_type)
@@ -593,7 +790,7 @@ class AlphaZeroAgent:
 
         while True:
             if piece_type == self_color:
-                action, _ = self.mcts_search(go, piece_type, temp=1e-3)
+                action, _ = self.mcts_search(go, piece_type, temp=1e-3, add_noise=False)
             else:
                 action = opponent_agent.get_input(go, piece_type)
             
@@ -635,7 +832,7 @@ if __name__ == "__main__":
     agent = AlphaZeroAgent()
 
     num_iterations = 1000
-    games_per_iteration = 100
+    games_per_iteration = 200
 
     # Initialize best_model as a separate agent
     best_model = AlphaZeroAgent()
@@ -658,7 +855,7 @@ if __name__ == "__main__":
                 agent.play_self_play_game()
             print(f"  Completed game {j + 1}/{games_per_iteration} in iteration {i + 1}")
 
-        agent.train(epochs=5)
+        agent.train(epochs=10)
         agent.save_model(f"modelx_{i + 1}.pth")
 
         # if win_rate > agent.best_win_rate:
