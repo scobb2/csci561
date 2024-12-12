@@ -1,0 +1,19 @@
+2024-11-24 12:46:29,249 INFO:Using actions: True
+2024-11-24 12:46:29,249 INFO:State Weights: {'S0': 2.0, 'S1': 5.0, 'S2': 5.0}
+2024-11-24 12:46:29,252 INFO:Transition Probabilities:
+2024-11-24 12:46:29,253 INFO:Observation Probabilities:
+2024-11-24 12:46:29,254 INFO:States: ['S0', 'S2', 'S1']
+2024-11-24 12:46:29,254 INFO:Observation Actions: [('Apple', 'Turnaround'), ('Apple', 'Backward'), ('Apple', 'Forward'), ('Volcano', None)]
+2024-11-24 12:46:29,254 INFO:Initial Observation: Apple
+2024-11-24 12:46:29,254 INFO:Delta after initialization: [0.21428571 0.42857143 0.35714286]
+2024-11-24 12:46:29,255 INFO:Time Step 1: Observation = Apple, Previous Action = Turnaround
+2024-11-24 12:46:29,255 INFO:Delta at time 1: [0.32133676 0.37017995 0.30848329]
+2024-11-24 12:46:29,255 INFO:Time Step 2: Observation = Apple, Previous Action = Backward
+2024-11-24 12:46:29,256 INFO:Delta at time 2: [0.35101404 0.33697348 0.31201248]
+2024-11-24 12:46:29,256 INFO:Time Step 3: Observation = Volcano, Previous Action = Forward
+2024-11-24 12:46:29,256 INFO:Delta at time 3: [0.30850655 0.25272857 0.43876488]
+2024-11-24 12:46:29,257 INFO:Starting Backtracking from state: S1
+2024-11-24 12:46:29,257 INFO:Backtracked to state: S2 at time 2
+2024-11-24 12:46:29,257 INFO:Backtracked to state: S2 at time 1
+2024-11-24 12:46:29,257 INFO:Backtracked to state: S2 at time 0
+2024-11-24 12:46:29,257 INFO:Most probable states sequence: ['S2', 'S2', 'S2', 'S1']
